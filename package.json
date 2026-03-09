@@ -33,13 +33,14 @@
   ],
   "scripts": {
     "clean": "node -e \"import('node:fs').then(({ rmSync }) => rmSync('dist', { recursive: true, force: true }))\"",
-    "build": "npm run clean && tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run clean && tsc -p tsconfig.json && node --test dist/**/*_test.js",
-    "test:coverage": "npm run clean && tsc -p tsconfig.json && node --test --experimental-test-coverage dist/**/*_test.js"
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit",
+    "test": "npm run clean && tsc -p tsconfig.test.json && node --test dist/**/*_test.js",
+    "test:coverage": "npm run clean && tsc -p tsconfig.test.json && node --test --experimental-test-coverage dist/**/*_test.js",
+    "prepack": "npm run build"
   },
   "dependencies": {
-    "muninn-frames-ts": "file:../muninn-frames-ts"
+    "muninn-frames-ts": "github:ianzepp/muninn-frames-ts"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
