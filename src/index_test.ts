@@ -194,3 +194,20 @@ test("sigcall registry enforces ownership and reserved names", () => {
     SigcallError
   );
 });
+
+test("same-owner sigcall re-register reuses the existing endpoint", async () => {
+  const kernel = Kernel.create();
+  const first = kernel.sigcalls().register("custom:reconnect", "owner-1");
+  const second = kernel.sigcalls().register("custom:reconnect", "owner-1");
+
+  assert.equal(first, second);
+
+  const collectPromise = kernel.caller().collect(request("custom:reconnect").frame);
+  const inbound = await first.recv();
+
+  assert.ok(inbound);
+  await first.send(frame(inbound).done({ ok: true }));
+
+  const frames = await collectPromise;
+  assert.equal(frames.at(-1)?.status, "done");
+});

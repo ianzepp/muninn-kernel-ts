@@ -8,6 +8,7 @@ import type { Kernel } from "./kernel.js";
 interface Registration {
   owner: string;
   queue: AsyncQueue<Frame>;
+  pipe: PipeEnd;
 }
 
 export class SigcallRegistry {
@@ -21,13 +22,18 @@ export class SigcallRegistry {
     }
 
     const existing = this.registrations.get(name);
-    if (existing !== undefined && existing.owner !== owner) {
-      throw SigcallError.alreadyRegistered(name, existing.owner);
+    if (existing !== undefined) {
+      if (existing.owner !== owner) {
+        throw SigcallError.alreadyRegistered(name, existing.owner);
+      }
+
+      return existing.pipe;
     }
 
     const queue = new AsyncQueue<Frame>();
-    this.registrations.set(name, { owner, queue });
-    return new PipeEnd(this.kernel, queue);
+    const pipe = new PipeEnd(this.kernel, queue);
+    this.registrations.set(name, { owner, queue, pipe });
+    return pipe;
   }
 
   unregister(name: string, owner: string): void {
