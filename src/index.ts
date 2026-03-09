@@ -1,3 +1,17 @@
+/**
+ * Public API surface for the muninn-kernel-ts microkernel library.
+ *
+ * Re-exports everything a consumer needs to build on top of the kernel:
+ * - Frame primitives and construction helpers (from `muninn-frames-ts` and `./frame`)
+ * - Error classes (`KernelError`, `SigcallError`) and the `ErrorCode` interface
+ * - `Kernel`: the central router — instantiate this first
+ * - `Caller` / `CallStream`: outbound request API
+ * - `PipeEnd`: external handler interface for pipe-registered prefixes
+ * - `SigcallRegistry`: runtime dynamic handler registration
+ * - `Subscriber`: broadcast consumer for monitoring and tracing
+ * - `Syscall` / `BackpressureConfig`: interfaces for implementing handlers
+ */
+
 export {
   type Frame,
   type JsonObject,
