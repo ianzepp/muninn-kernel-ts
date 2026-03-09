@@ -32,9 +32,11 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"import('node:fs').then(({ rmSync }) => rmSync('dist', { recursive: true, force: true }))\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsc -p tsconfig.json && node --test dist/**/*_test.js"
+    "test": "npm run clean && tsc -p tsconfig.json && node --test dist/**/*_test.js",
+    "test:coverage": "npm run clean && tsc -p tsconfig.json && node --test --experimental-test-coverage dist/**/*_test.js"
   },
   "dependencies": {
     "muninn-frames-ts": "file:../muninn-frames-ts"

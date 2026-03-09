@@ -4,25 +4,14 @@ import { isTerminalStatus, validateFrame } from "muninn-frames-ts";
 import { CallStream, Caller } from "./caller.js";
 import { KernelError, toKernelError } from "./errors.js";
 import { prefixOf, responseFrom, verbOf } from "./frame.js";
+import { normalizeResponse } from "./normalize.js";
 import { PipeEnd } from "./pipe.js";
 import { AsyncQueue } from "./queue.js";
 import { SigcallRegistry } from "./sigcall.js";
 import { Subscriber } from "./subscriber.js";
-
-export interface Syscall {
-  prefix(): string;
-  dispatch(
-    frame: Frame,
-    caller: Caller,
-    cancel: AbortSignal
-  ): AsyncIterable<Frame>;
-}
-
-export interface BackpressureConfig {
-  highWatermark: number;
-  lowWatermark: number;
-  stallTimeoutMs: number;
-}
+import { SubscriberRegistry } from "./subscriptions.js";
+import type { BackpressureConfig, Syscall } from "./types.js";
+import { DEFAULT_BACKPRESSURE } from "./types.js";
 
 interface PendingEntry {
   queue: AsyncQueue<Frame>;
@@ -36,25 +25,14 @@ interface ActiveRequest {
   pipe?: AsyncQueue<Frame>;
 }
 
-interface SubscriberEntry {
-  queue: AsyncQueue<Frame>;
-  config: BackpressureConfig;
-}
-
-const DEFAULT_BACKPRESSURE: BackpressureConfig = {
-  highWatermark: 1000,
-  lowWatermark: 100,
-  stallTimeoutMs: 5000
-};
-
 export class Kernel {
   private readonly syscalls = new Map<string, Syscall>();
   private readonly pipes = new Map<string, AsyncQueue<Frame>>();
   private readonly pending = new Map<string, PendingEntry>();
   private readonly active = new Map<string, ActiveRequest>();
-  private readonly subscribers = new Set<SubscriberEntry>();
   private readonly backpressure: BackpressureConfig;
   private readonly sigcallRegistry: SigcallRegistry;
+  private readonly subscribers = new SubscriberRegistry();
 
   static create(config: { backpressure?: Partial<BackpressureConfig> } = {}): Kernel {
     return new Kernel(config);
@@ -87,9 +65,7 @@ export class Kernel {
   }
 
   subscribe(): Subscriber {
-    const queue = new AsyncQueue<Frame>();
-    this.subscribers.add({ queue, config: this.backpressure });
-    return new Subscriber(queue);
+    return this.subscribers.subscribe(this.backpressure);
   }
 
   registerPending(requestId: string, queue: AsyncQueue<Frame>, stream: CallStream): void {
@@ -229,13 +205,7 @@ export class Kernel {
       }
     }
 
-    for (const subscriber of [...this.subscribers]) {
-      const delivered = await deliverToSubscriber(subscriber, frame);
-      if (!delivered) {
-        subscriber.queue.close();
-        this.subscribers.delete(subscriber);
-      }
-    }
+    await this.subscribers.deliver(frame);
 
     if (isTerminalStatus(frame.status) && parentId !== undefined) {
       this.active.delete(parentId);
@@ -272,41 +242,4 @@ export class Kernel {
         }));
       }
   }
-}
-
-async function deliverToSubscriber(
-  subscriber: SubscriberEntry,
-  frame: Frame
-): Promise<boolean> {
-  if (!isTerminalStatus(frame.status) && subscriber.queue.size >= subscriber.config.highWatermark) {
-    const drained = await subscriber.queue.waitForBelow(
-      subscriber.config.lowWatermark,
-      subscriber.config.stallTimeoutMs
-    );
-    if (!drained) {
-      return false;
-    }
-  }
-
-  subscriber.queue.push(frame);
-  return true;
-}
-
-function normalizeResponse(request: Frame, response: Frame): Frame {
-  if (response.status === "request") {
-    throw KernelError.internal("syscall yielded request status");
-  }
-
-  const normalized: Frame = {
-    ...response,
-    parent_id: response.parent_id ?? request.id,
-    call: response.call.length > 0 ? response.call : request.call
-  };
-
-  if (normalized.trace === undefined && request.trace !== undefined) {
-    normalized.trace = request.trace;
-  }
-
-  validateFrame(normalized);
-  return normalized;
 }

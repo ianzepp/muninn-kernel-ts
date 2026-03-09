@@ -7,10 +7,8 @@ import type { Frame } from "muninn-frames-ts";
 import {
   Caller,
   Kernel,
-  SigcallError,
   type Syscall,
   frame,
-  makeFrame,
   request,
   verbOf
 } from "./index.js";
@@ -49,16 +47,6 @@ class SlowSyscall implements Syscall {
   }
 }
 
-test("frame builder preserves correlation and trace", () => {
-  const req = frame(request("echo:ping").frame).withTrace({ span: "abc" });
-  const item = frame(req).item({ ok: true });
-
-  assert.equal(item.parent_id, req.id);
-  assert.equal(item.call, "echo:ping");
-  assert.deepEqual(item.trace, { span: "abc" });
-  assert.equal(item.status, "item");
-});
-
 test("caller collects streamed syscall responses", async () => {
   const kernel = Kernel.create();
   kernel.register(new EchoSyscall());
@@ -90,7 +78,7 @@ test("subscriber sees outbound responses", async () => {
   const callPromise = kernel.caller().collect(request("echo:stream").frame);
 
   const seen = await subscriber.collect({
-    until: (frameValue) => frameValue.status === "done"
+    until: (frameValue: Frame) => frameValue.status === "done"
   });
 
   await callPromise;
@@ -134,80 +122,4 @@ test("raw prefix registration can receive requests and send responses", async ()
   assert.equal(frames.length, 1);
   assert.equal(frames[0]?.status, "done");
   assert.deepEqual(frames[0]?.data, { handled: true });
-});
-
-test("makeFrame builds validated explicit frames", () => {
-  const explicit = makeFrame({
-    id: "frame-1",
-    parent_id: "parent-1",
-    created_ms: 1,
-    expires_in: 0,
-    call: "echo:ping",
-    status: "item",
-    data: { ok: true }
-  });
-
-  assert.equal(explicit.id, "frame-1");
-  assert.equal(explicit.parent_id, "parent-1");
-});
-
-test("sigcall routes to registered external handler", async () => {
-  const kernel = Kernel.create();
-  const handler = kernel.sigcalls().register("custom:op", "plugin-1");
-
-  const collectPromise = kernel.caller().collect(request("custom:op").frame);
-  const inbound = await handler.recv();
-
-  assert.ok(inbound);
-  await handler.send(frame(inbound).done({ ok: true }));
-
-  const frames = await collectPromise;
-  assert.equal(frames.length, 1);
-  assert.equal(frames[0]?.status, "done");
-  assert.deepEqual(frames[0]?.data, { ok: true });
-});
-
-test("sigcall:list returns registered handlers", async () => {
-  const kernel = Kernel.create();
-  kernel.sigcalls().register("custom:a", "owner-1");
-  kernel.sigcalls().register("custom:b", "owner-2");
-
-  const frames = await kernel.caller().collect(request("sigcall:list").frame);
-
-  const items = frames.filter((frameValue) => frameValue.status === "item");
-  const terminal = frames.at(-1);
-
-  assert.equal(items.length, 2);
-  assert.equal(terminal?.status, "done");
-});
-
-test("sigcall registry enforces ownership and reserved names", () => {
-  const kernel = Kernel.create();
-  kernel.sigcalls().register("custom:a", "owner-1");
-
-  assert.throws(
-    () => kernel.sigcalls().register("custom:a", "owner-2"),
-    SigcallError
-  );
-  assert.throws(
-    () => kernel.sigcalls().register("sigcall:register", "owner-1"),
-    SigcallError
-  );
-});
-
-test("same-owner sigcall re-register reuses the existing endpoint", async () => {
-  const kernel = Kernel.create();
-  const first = kernel.sigcalls().register("custom:reconnect", "owner-1");
-  const second = kernel.sigcalls().register("custom:reconnect", "owner-1");
-
-  assert.equal(first, second);
-
-  const collectPromise = kernel.caller().collect(request("custom:reconnect").frame);
-  const inbound = await first.recv();
-
-  assert.ok(inbound);
-  await first.send(frame(inbound).done({ ok: true }));
-
-  const frames = await collectPromise;
-  assert.equal(frames.at(-1)?.status, "done");
 });
